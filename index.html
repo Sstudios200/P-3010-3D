@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>P-3010: By S</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      margin: 0;
+      padding: 0;
+      font-family: 'Courier New', Courier, monospace;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #050508;
+      color: #00ffcc;
+    }
+    
+    /* 3D Canvas Background */
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+    
+    /* CRT Scanlines Overlay */
+    .scanlines {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.25) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.03),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.03)
+      );
+      background-size: 100% 3px, 6px 100%;
+      pointer-events: none;
+      z-index: 8;
+    }
+
+    /* HUD Overlay Frame */
+    .hud-frame {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      border: 2px solid rgba(0, 255, 204, 0.2);
+      pointer-events: none;
+      z-index: 9;
+    }
+
+    .hud-corner {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #00ffcc;
+    }
+    .top-left { top: 15px; left: 15px; border-right: none; border-bottom: none; }
+    .top-right { top: 15px; right: 15px; border-left: none; border-bottom: none; }
+    .bottom-left { bottom: 15px; left: 15px; border-right: none; border-top: none; }
+    .bottom-right { bottom: 15px; right: 15px; border-left: none; border-top: none; }
+
+    /* Vollbild Button Oben Rechts */
+    #fullscreen-btn {
+      position: absolute;
+      top: 25px;
+      right: 25px;
+      z-index: 50;
+      background: rgba(5, 10, 15, 0.85);
+      border: 1px solid #00ffcc;
+      color: #00ffcc;
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
+      transition: all 0.2s ease;
+      clip-path: polygon(0 0, 100% 0, 100% 70%, 85% 100%, 0 100%);
+    }
+
+    #fullscreen-btn:hover {
+      background: #00ffcc;
+      color: #050508;
+      box-shadow: 0 0 20px #00ffcc;
+    }
+
+    /* In-Game HUD */
+    #hud {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 30px;
+    }
+    
+    .hud-top {
+      display: flex;
+      justify-content: flex-start;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    .stat-box {
+      background: rgba(5, 10, 15, 0.85);
+      border: 1px solid #00ffcc;
+      box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
+      padding: 10px 18px;
+      letter-spacing: 2px;
+      clip-path: polygon(0 0, 100% 0, 92% 100%, 0 100%);
+    }
+    .stat-label {
+      font-size: 10px;
+      color: #00ffcc;
+      margin-bottom: 2px;
+      font-weight: bold;
+    }
+    .stat-value {
+      font-size: 26px;
+      font-weight: 900;
+      text-shadow: 0 0 10px #00ffcc;
+      color: #fff;
+    }
+
+    #powerup-bar {
+      display: flex;
+      gap: 12px;
+      margin-top: 15px;
+    }
+    .powerup-badge {
+      padding: 6px 14px;
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      animation: pulse 0.8s infinite alternate;
+      display: none;
+    }
+    .badge-shield { background: rgba(0, 255, 128, 0.2); border: 1px solid #00ff80; color: #00ff80; box-shadow: 0 0 10px #00ff80; }
+    .badge-magnet { background: rgba(0, 160, 255, 0.2); border: 1px solid #00a0ff; color: #00a0ff; box-shadow: 0 0 10px #00a0ff; }
+    .badge-boost  { background: rgba(255, 200, 0, 0.2); border: 1px solid #ffc800; color: #ffc800; box-shadow: 0 0 10px #ffc800; }
+
+    @keyframes pulse {
+      from { opacity: 0.6; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1.02); }
+    }
+
+    #glitch-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 12;
+      opacity: 0;
+      transition: opacity 0.08s ease;
+      background: radial-gradient(circle, rgba(255,0,85,0.4) 0%, rgba(0,0,0,0) 80%);
+    }
+
+    /* Startmenü & Modals */
+    .menu-container {
+      position: relative;
+      z-index: 15;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+      padding-left: 10%;
+      background: radial-gradient(circle at 20% 50%, rgba(0, 255, 204, 0.08), transparent 60%);
+    }
+
+    .title-box {
+      margin-bottom: 35px;
+    }
+
+    .main-title {
+      font-size: 68px;
+      font-weight: 900;
+      letter-spacing: 12px;
+      color: #ffffff;
+      text-shadow: 
+        0 0 10px #00ffcc,
+        0 0 20px #00ffcc,
+        0 0 40px rgba(0, 255, 204, 0.5);
+      animation: glitch 4s infinite alternate;
+    }
+
+    .sub-title {
+      font-size: 16px;
+      letter-spacing: 8px;
+      color: #ff0055;
+      text-transform: uppercase;
+      margin-top: -5px;
+      text-shadow: 0 0 8px #ff0055;
+      font-weight: bold;
+    }
+
+    .badge {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 4px 10px;
+      background: rgba(0, 255, 204, 0.1);
+      border: 1px solid #00ffcc;
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: #00ffcc;
+    }
+
+    .nav-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 320px;
+    }
+
+    .menu-btn {
+      background: rgba(5, 10, 15, 0.8);
+      border: 1px solid rgba(0, 255, 204, 0.3);
+      color: #00ffcc;
+      padding: 14px 20px;
+      font-size: 14px;
+      letter-spacing: 4px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      clip-path: polygon(0 0, 92% 0, 100% 30%, 100% 100%, 8% 100%, 0 70%);
+    }
+
+    .menu-btn:hover {
+      background: rgba(0, 255, 204, 0.2);
+      border-color: #00ffcc;
+      color: #ffffff;
+      padding-left: 28px;
+      box-shadow: 0 0 15px rgba(0, 255, 204, 0.4);
+    }
+
+    .modal {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(2, 4, 8, 0.88);
+      backdrop-filter: blur(8px);
+      z-index: 20;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      width: 450px;
+      background: rgba(10, 20, 25, 0.95);
+      border: 1px solid #00ffcc;
+      padding: 30px;
+      box-shadow: 0 0 30px rgba(0, 255, 204, 0.2);
+    }
+
+    .modal-title {
+      font-size: 18px;
+      letter-spacing: 4px;
+      color: #ffffff;
+      margin-bottom: 25px;
+      border-bottom: 1px solid rgba(0, 255, 204, 0.3);
+      padding-bottom: 10px;
+    }
+
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      font-size: 12px;
+      letter-spacing: 2px;
+    }
+
+    .setting-row input[type="range"] {
+      accent-color: #00ffcc;
+      cursor: pointer;
+    }
+
+    .skin-picker {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .skin-opt {
+      width: 40px;
+      height: 40px;
+      border: 2px solid rgba(255,255,255,0.3);
+      cursor: pointer;
+    }
+
+    .skin-opt.active {
+      border-color: #00ffcc;
+      box-shadow: 0 0 10px #00ffcc;
+    }
+
+    .system-status {
+      position: absolute;
+      top: 25px;
+      right: 180px;
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: rgba(0, 255, 204, 0.6);
+      text-align: right;
+      z-index: 10;
+    }
+
+    .footer-info {
+      position: absolute;
+      bottom: 25px;
+      left: 10%;
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: rgba(255, 255, 255, 0.4);
+      z-index: 10;
+    }
+
+    @keyframes glitch {
+      0% { text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc; }
+      92% { text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc; }
+      93% { text-shadow: -2px 0 #ff0055, 2px 0 #00ffcc; transform: skewX(0.5deg); }
+      94% { text-shadow: 2px 0 #ff0055, -2px 0 #00ffcc; transform: skewX(-0.5deg); }
+      95% { text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc; transform: skewX(0deg); }
+      100% { text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc; }
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <div id="canvas-container"></div>
+  <div class="scanlines"></div>
+  <div id="glitch-overlay"></div>
+
+  <button id="fullscreen-btn" onclick="toggleFullscreen()">[⛶ FULLSCREEN]</button>
+
+  <div class="hud-frame">
+    <div class="hud-corner top-left"></div>
+    <div class="hud-corner top-right"></div>
+    <div class="hud-corner bottom-left"></div>
+    <div class="hud-corner bottom-right"></div>
+  </div>
+
+  <div class="system-status">
+    SYSTEM: ONLINE<br>
+    SECTOR: 3010-B<br>
+    BUILD: v1.0.0
+  </div>
+
+  <!-- Startmenü -->
+  <div id="start-menu" class="menu-container">
+    <div class="title-box">
+      <div class="main-title">P-3010</div>
+      <div class="sub-title">BY S</div>
+      <div class="badge">SECURE ACCESS GRANTED</div>
+    </div>
+
+    <nav class="nav-menu">
+      <button class="menu-btn" onclick="startGame()">
+        <span>[1] START</span>
+        <span>►</span>
+      </button>
+      <button class="menu-btn" onclick="openModal('options-modal')">
+        <span>[2] OPTIONEN</span>
+        <span>⚙</span>
+      </button>
+      <button class="menu-btn" onclick="openModal('credits-modal')">
+        <span>[3] CREDITS</span>
+        <span>i</span>
+      </button>
+    </nav>
+  </div>
+
+  <div class="footer-info" id="footer-branding">
+    PROJEKT 3010 // BY S // ALL RIGHTS RESERVED
+  </div>
+
+  <!-- In-Game HUD -->
+  <div id="hud">
+    <div class="hud-top">
+      <div class="stat-box">
+        <div class="stat-label">// DISTANZ</div>
+        <div class="stat-value" id="dist-val">0M</div>
+      </div>
+      <div class="stat-box" style="border-color: #ff0055; box-shadow: 0 0 15px rgba(255,0,85,0.3);">
+        <div class="stat-label" style="color: #ff0055;">// CHIPS GEHACKT</div>
+        <div class="stat-value" id="chips-val" style="color: #ff0055; text-shadow: 0 0 10px #ff0055;">0</div>
+      </div>
+    </div>
+    
+    <div id="powerup-bar">
+      <div id="badge-shield" class="powerup-badge badge-shield">🛡️ SCHILD AKTIV</div>
+      <div id="badge-magnet" class="powerup-badge badge-magnet">🧲 MAGNET AKTIV</div>
+      <div id="badge-boost" class="powerup-badge badge-boost">⚡ OVERDRIVE BOOST</div>
+    </div>
+  </div>
+
+  <!-- Optionen Modal -->
+  <div id="options-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-title">// SYSTEM EINSTELLUNGEN</div>
+      
+      <div class="setting-row">
+        <label for="volume">SOUND LAUTSTÄRKE</label>
+        <input type="range" id="volume" min="0" max="100" value="80">
+      </div>
+
+      <div style="font-size: 11px; margin-bottom: 10px;">HAND-SKIN FARBE:</div>
+      <div class="skin-picker">
+        <div class="skin-opt active" style="background: #00ffcc;" onclick="setSkin(0, this)"></div>
+        <div class="skin-opt" style="background: #00ff80;" onclick="setSkin(1, this)"></div>
+        <div class="skin-opt" style="background: #ff5500;" onclick="setSkin(2, this)"></div>
+        <div class="skin-opt" style="background: #ff00ff;" onclick="setSkin(3, this)"></div>
+      </div>
+
+      <button class="menu-btn" style="width: 100%; margin-top: 10px;" onclick="closeModal('options-modal')">
+        <span>[X] SCHLIESSEN</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Credits Modal -->
+  <div id="credits-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-title">// CREDITS</div>
+      <p style="font-size: 12px; line-height: 1.8; color: rgba(255,255,255,0.8); margin-bottom: 20px;">
+        <strong>ENTWICKLUNG & DESIGN:</strong> S<br>
+        <strong>SPIELTITEL:</strong> P-3010<br>
+        <strong>ENGINE:</strong> Three.js / HTML5 Canvas<br>
+        <strong>AUDIO:</strong> Web Audio API Synthesizer
+      </p>
+      <button class="menu-btn" style="width: 100%;" onclick="closeModal('credits-modal')">
+        <span>[X] SCHLIESSEN</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div id="gameover-modal" class="modal">
+    <div class="modal-content" style="text-align: center;">
+      <div class="modal-title" style="color: #ff0055; border-color: #ff0055;">// SYSTEM CRASH</div>
+      <p id="final-stats" style="font-size: 14px; margin-bottom: 25px; letter-spacing: 2px;">DISTANZ: 0M | CHIPS: 0</p>
+      <button class="menu-btn" style="width: 100%; margin-bottom: 10px;" onclick="startGame()">
+        <span>[R] SYSTEM REBOOT</span>
+      </button>
+      <button class="menu-btn" style="width: 100%;" onclick="showStartMenu()">
+        <span>[M] HAUPTMENÜ</span>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    /* --- VOLLBILD LOGIK --- */
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.log(`Fehler beim Aktivieren von Vollbild: ${err.message}`);
+        });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    /* --- AUDIO ENGINE --- */
+    class AudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.beatTimer = null;
+        this.step = 0;
+      }
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      }
+      startMusic() {
+        if (this.beatTimer) clearInterval(this.beatTimer);
+        this.step = 0;
+        this.beatTimer = setInterval(() => {
+          if (!isRunning) return;
+          this.playSynthNote(this.step % 8);
+          this.step++;
+        }, 160);
+      }
+      stopMusic() {
+        if (this.beatTimer) clearInterval(this.beatTimer);
+      }
+      playSynthNote(step) {
+        if (!this.ctx) return;
+        let notes = [110, 110, 130, 110, 146, 130, 110, 164];
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        let filter = this.ctx.createBiquadFilter();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(notes[step], this.ctx.currentTime);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(400, this.ctx.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.12);
+
+        const vol = (document.getElementById('volume').value || 80) / 100 * 0.12;
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.14);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+      }
+      playJump() {
+        if (!this.ctx) return;
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(500, this.ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+      }
+      playSlide() {
+        if (!this.ctx) return;
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(320, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(90, this.ctx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.2);
+      }
+      playCoin() {
+        if (!this.ctx) return;
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(900, this.ctx.currentTime);
+        osc.frequency.setValueAtTime(1400, this.ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.18);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.18);
+      }
+      playCrash() {
+        if (!this.ctx) return;
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(20, this.ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.4);
+      }
+    }
+
+    const audio = new AudioEngine();
+
+    /* --- GAME ENGINE VARIABLES --- */
+    let scene, camera, renderer;
+    let handsGroup;
+    let lanes = [-3.6, 0, 3.6];
+    let currentLane = 1;
+    let targetX = 0;
+    
+    // Physics
+    let playerY = 1.6;
+    let velocityY = 0;
+    let isGrounded = true;
+    let isSliding = false;
+    let slideTimer = 0;
+    
+    // Game State
+    let isRunning = false;
+    let speed = 0.5;
+    let distance = 0;
+    let chipsCollected = 0;
+    let skinColors = [0x00ffcc, 0x00ff80, 0xff5500, 0xff00ff];
+    let selectedSkinColor = skinColors[0];
+
+    // Powerups
+    let shieldActive = false;
+    let magnetActive = false;
+    let boostActive = false;
+    let boostTimer = 0;
+
+    // Objects
+    let obstacles = [];
+    let collectibles = [];
+    let cityBuildings = [];
+    let speedParticles;
+
+    function init() {
+      const container = document.getElementById('canvas-container');
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x02020a);
+      scene.fog = new THREE.FogExp2(0x02020a, 0.018);
+
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 250);
+      camera.position.set(0, playerY, 0);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container.appendChild(renderer.domElement);
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0x00ffcc, 1.0);
+      dirLight.position.set(30, 50, -30);
+      scene.add(dirLight);
+
+      createPlayerHands();
+      createTrackAndCity();
+      createSpeedParticles();
+
+      window.addEventListener('resize', onWindowResize);
+      setupControls();
+
+      animate();
+    }
+
+    function createPlayerHands() {
+      handsGroup = new THREE.Group();
+
+      const armMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.2, metalness: 0.8 });
+      const glowMat = new THREE.MeshBasicMaterial({ color: selectedSkinColor });
+
+      const leftArm = new THREE.Group();
+      const lBox = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.5), armMat);
+      const lStrip = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.03, 0.3), glowMat);
+      lStrip.position.set(0, 0.05, 0);
+      leftArm.add(lBox, lStrip);
+      leftArm.position.set(-0.38, -0.32, -0.55);
+
+      const rightArm = new THREE.Group();
+      const rBox = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.5), armMat);
+      const rStrip = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.03, 0.3), glowMat);
+      rStrip.position.set(0, 0.05, 0);
+      rightArm.add(rBox, rStrip);
+      rightArm.position.set(0.38, -0.32, -0.55);
+
+      handsGroup.add(leftArm, rightArm);
+      camera.add(handsGroup);
+      scene.add(camera);
+    }
+
+    function updateHandSkins() {
+      if (!handsGroup) return;
+      handsGroup.children.forEach(arm => {
+        arm.children[1].material.color.setHex(selectedSkinColor);
+      });
+    }
+
+    function createTrackAndCity() {
+      const floorGeo = new THREE.PlaneGeometry(16, 400);
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x060810, roughness: 0.1, metalness: 0.9 });
+      const floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.z = -150;
+      scene.add(floor);
+
+      for (let x of [-1.8, 1.8]) {
+        const lineGeo = new THREE.PlaneGeometry(0.08, 400);
+        const lineMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+        const line = new THREE.Mesh(lineGeo, lineMat);
+        line.rotation.x = -Math.PI / 2;
+        line.position.set(x, 0.02, -150);
+        scene.add(line);
+      }
+
+      for (let i = 0; i < 40; i++) {
+        let side = i % 2 === 0 ? -1 : 1;
+        let height = 30 + Math.random() * 60;
+        let width = 12 + Math.random() * 10;
+        let depth = 12 + Math.random() * 10;
+
+        let bGeo = new THREE.BoxGeometry(width, height, depth);
+        let bMat = new THREE.MeshStandardMaterial({ color: 0x080d1a, roughness: 0.3 });
+        let building = new THREE.Mesh(bGeo, bMat);
+
+        building.position.set(side * (18 + Math.random() * 10), height / 2, -i * 10);
+        scene.add(building);
+        cityBuildings.push(building);
+
+        if (Math.random() > 0.4) {
+          let signGeo = new THREE.PlaneGeometry(8, 3);
+          let signMat = new THREE.MeshBasicMaterial({
+            color: Math.random() > 0.5 ? 0xff0055 : 0x00ffcc,
+            side: THREE.DoubleSide
+          });
+          let sign = new THREE.Mesh(signGeo, signMat);
+          sign.position.set(side * 11.5, 10 + Math.random() * 20, -i * 10);
+          sign.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+          scene.add(sign);
+        }
+      }
+    }
+
+    function createSpeedParticles() {
+      const pCount = 300;
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(pCount * 3);
+
+      for (let i = 0; i < pCount * 3; i += 3) {
+        pos[i] = (Math.random() - 0.5) * 20;
+        pos[i + 1] = Math.random() * 10;
+        pos[i + 2] = -Math.random() * 100;
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({ color: 0x00ffcc, size: 0.08, transparent: true, opacity: 0.7 });
+      speedParticles = new THREE.Points(geo, mat);
+      scene.add(speedParticles);
+    }
+
+    function spawnObstacle() {
+      const lane = lanes[Math.floor(Math.random() * lanes.length)];
+      const isDrone = Math.random() > 0.5;
+
+      let mesh;
+      if (isDrone) {
+        mesh = new THREE.Group();
+        const body = new THREE.Mesh(
+          new THREE.BoxGeometry(2.2, 0.5, 0.8),
+          new THREE.MeshStandardMaterial({ color: 0xff0055, roughness: 0.2 })
+        );
+        const scanner = new THREE.Mesh(
+          new THREE.ConeGeometry(0.8, 2.5, 8),
+          new THREE.MeshBasicMaterial({ color: 0xff0055, transparent: true, opacity: 0.3, wireframe: true })
+        );
+        scanner.rotation.x = Math.PI;
+        scanner.position.y = -1.2;
+        mesh.add(body, scanner);
+        mesh.position.set(lane, 2.3, -120);
+        mesh.userData = { type: 'drone' };
+      } else {
+        mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(2.6, 1.2, 0.8),
+          new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
+        );
+        const neonBorder = new THREE.Mesh(
+          new THREE.BoxGeometry(2.64, 0.15, 0.84),
+          new THREE.MeshBasicMaterial({ color: 0x00ffcc })
+        );
+        neonBorder.position.y = 0.45;
+        mesh.add(neonBorder);
+        mesh.position.set(lane, 0.6, -120);
+        mesh.userData = { type: 'barrier' };
+      }
+
+      scene.add(mesh);
+      obstacles.push(mesh);
+    }
+
+    function spawnCollectible() {
+      const lane = lanes[Math.floor(Math.random() * lanes.length)];
+      const isPowerup = Math.random() < 0.12;
+
+      let mesh;
+      if (isPowerup) {
+        const types = ['shield', 'magnet', 'boost'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        let pColor = type === 'shield' ? 0x00ff80 : (type === 'magnet' ? 0x00a0ff : 0xffc800);
+
+        mesh = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(0.4),
+          new THREE.MeshBasicMaterial({ color: pColor, wireframe: true })
+        );
+        mesh.position.set(lane, 1.2, -120);
+        mesh.userData = { type: 'powerup', pType: type };
+      } else {
+        mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(0.3, 0.3, 0.08),
+          new THREE.MeshBasicMaterial({ color: 0xff0055 })
+        );
+        mesh.position.set(lane, 1.2, -120);
+        mesh.userData = { type: 'chip' };
+      }
+
+      scene.add(mesh);
+      collectibles.push(mesh);
+    }
+
+    let frame = 0;
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      if (isRunning) {
+        frame++;
+
+        distance += speed * 0.5;
+        speed += 0.00004;
+        document.getElementById('dist-val').innerText = Math.floor(distance) + 'M';
+
+        let xDiff = targetX - camera.position.x;
+        camera.position.x += xDiff * 0.2;
+        camera.rotation.z = -xDiff * 0.05;
+
+        velocityY -= 0.015;
+        playerY += velocityY;
+
+        let targetY = isSliding ? 0.95 : 1.6;
+
+        if (playerY <= targetY) {
+          playerY = targetY;
+          velocityY = 0;
+          isGrounded = true;
+        }
+
+        camera.position.y = playerY;
+
+        if (isSliding) {
+          slideTimer--;
+          if (slideTimer <= 0) isSliding = false;
+        }
+
+        if (isGrounded) {
+          handsGroup.position.y = Math.sin(frame * 0.22) * 0.025;
+          handsGroup.position.x = Math.cos(frame * 0.11) * 0.015;
+        }
+
+        if (boostActive) {
+          boostTimer--;
+          if (boostTimer <= 0) {
+            boostActive = false;
+            document.getElementById('badge-boost').style.display = 'none';
+          }
+        }
+
+        if (frame % Math.max(22, Math.floor(55 - speed * 25)) === 0) spawnObstacle();
+        if (frame % 18 === 0) spawnCollectible();
+
+        if (speedParticles) {
+          const pos = speedParticles.geometry.attributes.position.array;
+          let currentSpeed = boostActive ? speed * 2.2 : speed;
+          for (let i = 2; i < pos.length; i += 3) {
+            pos[i] += currentSpeed * 2;
+            if (pos[i] > 0) pos[i] = -100;
+          }
+          speedParticles.geometry.attributes.position.needsUpdate = true;
+        }
+
+        cityBuildings.forEach(b => {
+          b.position.z += speed * 0.5;
+          if (b.position.z > 20) b.position.z = -380;
+        });
+
+        updateObstacles();
+        updateCollectibles();
+      } else {
+        camera.position.x = Math.sin(Date.now() * 0.0005) * 2;
+        camera.position.z = 0;
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    function updateObstacles() {
+      let curSpeed = boostActive ? speed * 2.2 : speed;
+
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        obs.position.z += curSpeed;
+
+        if (obs.userData.type === 'drone') {
+          obs.children[0].rotation.y += 0.1;
+        }
+
+        if (Math.abs(obs.position.z - camera.position.z) < 1.0 &&
+            Math.abs(obs.position.x - camera.position.x) < 1.2) {
+          
+          let hit = false;
+          if (obs.userData.type === 'barrier' && playerY < 1.8) hit = true;
+          if (obs.userData.type === 'drone' && !isSliding) hit = true;
+
+          if (hit) {
+            if (shieldActive) {
+              shieldActive = false;
+              document.getElementById('badge-shield').style.display = 'none';
+              triggerGlitch(0.3);
+              scene.remove(obs);
+              obstacles.splice(i, 1);
+              continue;
+            } else if (!boostActive) {
+              gameOver();
+              return;
+            }
+          }
+        }
+
+        if (obs.position.z > 5) {
+          scene.remove(obs);
+          obstacles.splice(i, 1);
+        }
+      }
+    }
+
+    function updateCollectibles() {
+      let curSpeed = boostActive ? speed * 2.2 : speed;
+
+      for (let i = collectibles.length - 1; i >= 0; i--) {
+        let col = collectibles[i];
+        col.position.z += curSpeed;
+        col.rotation.y += 0.06;
+
+        if (magnetActive && col.position.z > -25) {
+          col.position.x += (camera.position.x - col.position.x) * 0.22;
+          col.position.y += (camera.position.y - col.position.y) * 0.22;
+        }
+
+        if (col.position.distanceTo(camera.position) < 1.5) {
+          audio.playCoin();
+
+          if (col.userData.type === 'chip') {
+            chipsCollected++;
+            document.getElementById('chips-val').innerText = chipsCollected;
+          } else if (col.userData.type === 'powerup') {
+            activatePowerup(col.userData.pType);
+          }
+
+          scene.remove(col);
+          collectibles.splice(i, 1);
+          continue;
+        }
+
+        if (col.position.z > 5) {
+          scene.remove(col);
+          collectibles.splice(i, 1);
+        }
+      }
+    }
+
+    function activatePowerup(type) {
+      if (type === 'shield') {
+        shieldActive = true;
+        document.getElementById('badge-shield').style.display = 'block';
+      } else if (type === 'magnet') {
+        magnetActive = true;
+        document.getElementById('badge-magnet').style.display = 'block';
+        setTimeout(() => {
+          magnetActive = false;
+          document.getElementById('badge-magnet').style.display = 'none';
+        }, 8000);
+      } else if (type === 'boost') {
+        boostActive = true;
+        boostTimer = 180;
+        document.getElementById('badge-boost').style.display = 'block';
+      }
+    }
+
+    function setupControls() {
+      window.addEventListener('keydown', (e) => {
+        if (!isRunning) return;
+        audio.init();
+
+        if ((e.key === 'a' || e.key === 'ArrowLeft') && currentLane > 0) {
+          currentLane--;
+          targetX = lanes[currentLane];
+        }
+        if ((e.key === 'd' || e.key === 'ArrowRight') && currentLane < lanes.length - 1) {
+          currentLane++;
+          targetX = lanes[currentLane];
+        }
+        if ((e.key === ' ' || e.key === 'w' || e.key === 'ArrowUp') && isGrounded) {
+          velocityY = 0.28;
+          isGrounded = false;
+          audio.playJump();
+        }
+        if ((e.key === 's' || e.key === 'ArrowDown') && isGrounded && !isSliding) {
+          isSliding = true;
+          slideTimer = 32;
+          audio.playSlide();
+        }
+      });
+
+      let touchStartX = 0, touchStartY = 0;
+      window.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      });
+
+      window.addEventListener('touchend', (e) => {
+        if (!isRunning) return;
+        audio.init();
+
+        let dx = e.changedTouches[0].clientX - touchStartX;
+        let dy = e.changedTouches[0].clientY - touchStartY;
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+          if (dx < -30 && currentLane > 0) { currentLane--; targetX = lanes[currentLane]; }
+          else if (dx > 30 && currentLane < lanes.length - 1) { currentLane++; targetX = lanes[currentLane]; }
+        } else {
+          if (dy < -30 && isGrounded) { velocityY = 0.28; isGrounded = false; audio.playJump(); }
+          else if (dy > 30 && isGrounded && !isSliding) { isSliding = true; slideTimer = 32; audio.playSlide(); }
+        }
+      });
+    }
+
+    function openModal(id) {
+      document.getElementById(id).style.display = 'flex';
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).style.display = 'none';
+    }
+
+    function setSkin(index, el) {
+      document.querySelectorAll('.skin-opt').forEach(s => s.classList.remove('active'));
+      el.classList.add('active');
+      selectedSkinColor = skinColors[index];
+      updateHandSkins();
+    }
+
+    function startGame() {
+      audio.init();
+      audio.startMusic();
+
+      obstacles.forEach(o => scene.remove(o));
+      collectibles.forEach(c => scene.remove(c));
+      obstacles = [];
+      collectibles = [];
+
+      currentLane = 1;
+      targetX = lanes[currentLane];
+      speed = 0.5;
+      distance = 0;
+      chipsCollected = 0;
+      playerY = 1.6;
+      velocityY = 0;
+
+      shieldActive = false;
+      magnetActive = false;
+      boostActive = false;
+
+      document.getElementById('badge-shield').style.display = 'none';
+      document.getElementById('badge-magnet').style.display = 'none';
+      document.getElementById('badge-boost').style.display = 'none';
+
+      document.getElementById('dist-val').innerText = '0M';
+      document.getElementById('chips-val').innerText = '0';
+
+      document.getElementById('start-menu').style.display = 'none';
+      document.getElementById('footer-branding').style.display = 'none';
+      document.getElementById('gameover-modal').style.display = 'none';
+      document.getElementById('hud').style.display = 'flex';
+
+      isRunning = true;
+    }
+
+    function gameOver() {
+      isRunning = false;
+      audio.stopMusic();
+      audio.playCrash();
+      triggerGlitch(0.9);
+
+      document.getElementById('hud').style.display = 'none';
+      document.getElementById('final-stats').innerText = 
+        `DISTANZ: ${Math.floor(distance)}M | CHIPS GEHACKT: ${chipsCollected}`;
+      document.getElementById('gameover-modal').style.display = 'flex';
+    }
+
+    function showStartMenu() {
+      document.getElementById('gameover-modal').style.display = 'none';
+      document.getElementById('start-menu').style.display = 'flex';
+      document.getElementById('footer-branding').style.display = 'block';
+    }
+
+    function triggerGlitch(intensity) {
+      const overlay = document.getElementById('glitch-overlay');
+      overlay.style.opacity = intensity;
+      setTimeout(() => { overlay.style.opacity = '0'; }, 250);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
